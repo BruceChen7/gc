@@ -98,6 +98,7 @@ typedef struct Allocation {
 static Allocation* gc_allocation_new(void* ptr, size_t size, void (*dtor)(void*))
 {
     Allocation* a = (Allocation*) malloc(sizeof(Allocation));
+    // 指向的那块内存
     a->ptr = ptr;
     a->size = size;
     a->tag = GC_TAG_NONE;
@@ -453,6 +454,7 @@ void* gc_realloc(GarbageCollector* gc, void* p, size_t size)
     return q;
 }
 
+// 释放垃圾内存
 void gc_free(GarbageCollector* gc, void* ptr)
 {
     Allocation* alloc = gc_allocation_map_get(gc->allocs, ptr);
@@ -488,6 +490,7 @@ void gc_start_ext(GarbageCollector* gc,
     initial_capacity = initial_capacity < min_capacity ? min_capacity : initial_capacity;
     gc->allocs = gc_allocation_map_new(min_capacity, initial_capacity,
                                        sweep_factor, downsize_limit, upsize_limit);
+    // 打印相关日志
     LOG_DEBUG("Created new garbage collector (cap=%ld, siz=%ld).", gc->allocs->capacity,
               gc->allocs->size);
 }

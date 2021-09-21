@@ -24,6 +24,7 @@ static char* test_primes()
     return 0;
 }
 
+// 用来释放内存
 void dtor(void* ptr)
 {
     UNUSED(ptr);
@@ -32,6 +33,7 @@ void dtor(void* ptr)
 
 static char* test_gc_allocation_new_delete()
 {
+    // 分配内存
     int* ptr = malloc(sizeof(int));
     Allocation* a = gc_allocation_new(ptr, sizeof(int), dtor);
     mu_assert(a != NULL, "Allocation should return non-NULL");
@@ -40,6 +42,7 @@ static char* test_gc_allocation_new_delete()
     mu_assert(a->tag == GC_TAG_NONE, "Annotation should initially be untagged");
     mu_assert(a->dtor == dtor, "Destructor pointer should not change");
     mu_assert(a->next == NULL, "Annotation should initilally be unlinked");
+    // 释放内存
     gc_allocation_delete(a);
     free(ptr);
     return NULL;
@@ -187,9 +190,11 @@ static char* test_gc_allocation_map_cleanup()
 }
 
 
+// 标记阶段
 static char* test_gc_mark_stack()
 {
     GarbageCollector gc_;
+    // 获取栈的bottom
     void *bos = __builtin_frame_address(0);
     gc_start_ext(&gc_, bos, 32, 32, 0.0, DBL_MAX, DBL_MAX);
     gc_pause(&gc_);

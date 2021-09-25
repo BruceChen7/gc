@@ -76,6 +76,7 @@ static size_t next_prime(size_t n)
  * The allocation object holds all metadata for a memory location
  * in one place.
  */
+// 具体的一个分配对象
 typedef struct Allocation {
     void* ptr;                // mem pointer
     size_t size;              // allocated size in bytes
@@ -95,6 +96,7 @@ typedef struct Allocation {
  *                 before freeing the memory pointed to by `ptr`.
  * @returns Pointer to the new allocation instance.
  */
+// 创建一个分配的内存
 static Allocation* gc_allocation_new(void* ptr, size_t size, void (*dtor)(void*))
 {
     Allocation* a = (Allocation*) malloc(sizeof(Allocation));
@@ -128,14 +130,14 @@ static void gc_allocation_delete(Allocation* a)
  * resolution is implemented using separate chaining.
  */
 typedef struct AllocationMap {
-    size_t capacity;
+    size_t capacity; // 容量
     size_t min_capacity;
     double downsize_factor;
     double upsize_factor;
     double sweep_factor;
     size_t sweep_limit;
     size_t size;
-    Allocation** allocs;
+    Allocation** allocs; // alloc中数组
 } AllocationMap;
 
 /**
@@ -193,6 +195,7 @@ static void gc_allocation_map_delete(AllocationMap* am)
     free(am);
 }
 
+// 很简单的hash算法
 static size_t gc_hash(void *ptr)
 {
     return ((uintptr_t)ptr) >> 3;
@@ -227,27 +230,33 @@ static void gc_allocation_map_resize(AllocationMap* am, size_t new_capacity)
 
 static bool gc_allocation_map_resize_to_fit(AllocationMap* am)
 {
+    // 获取当前的负载因子
     double load_factor = gc_allocation_map_load_factor(am);
     if (load_factor > am->upsize_factor) {
         LOG_DEBUG("Load factor %0.3g > %0.3g. Triggering upsize.",
                   load_factor, am->upsize_factor);
+        // resize
         gc_allocation_map_resize(am, next_prime(am->capacity * 2));
         return true;
     }
     if (load_factor < am->downsize_factor) {
         LOG_DEBUG("Load factor %0.3g < %0.3g. Triggering downsize.",
                   load_factor, am->downsize_factor);
+        // 缩小
         gc_allocation_map_resize(am, next_prime(am->capacity / 2));
         return true;
     }
     return false;
 }
 
+// hashmap中获取该地址
 static Allocation* gc_allocation_map_get(AllocationMap* am, void* ptr)
 {
+    // 获取bucket
     size_t index = gc_hash(ptr) % am->capacity;
     Allocation* cur = am->allocs[index];
     while(cur) {
+        // 找到了
         if (cur->ptr == ptr) {
             return cur;
         }
@@ -256,13 +265,16 @@ static Allocation* gc_allocation_map_get(AllocationMap* am, void* ptr)
     return NULL;
 }
 
+// 放到hashmap 中
 static Allocation* gc_allocation_map_put(AllocationMap* am,
         void* ptr,
         size_t size,
         void (*dtor)(void*))
 {
+    // 获取index
     size_t index = gc_hash(ptr) % am->capacity;
     LOG_DEBUG("PUT request for allocation ix=%ld", index);
+    // 分配的对象
     Allocation* alloc = gc_allocation_new(ptr, size, dtor);
     Allocation* cur = am->allocs[index];
     Allocation* prev = NULL;
@@ -300,6 +312,7 @@ static Allocation* gc_allocation_map_put(AllocationMap* am,
 }
 
 
+// 从分配的hash表中，释放ptr
 static void gc_allocation_map_remove(AllocationMap* am,
                                      void* ptr,
                                      bool allow_resize)
@@ -311,6 +324,7 @@ static void gc_allocation_map_remove(AllocationMap* am,
     Allocation* next;
     while(cur != NULL) {
         next = cur->next;
+        // 找到对应的
         if (cur->ptr == ptr) {
             // found it
             if (!prev) {
@@ -320,6 +334,7 @@ static void gc_allocation_map_remove(AllocationMap* am,
                 // not the first item in the list
                 prev->next = cur->next;
             }
+            // 删除对应的节点
             gc_allocation_delete(cur);
             am->size--;
         } else {
@@ -482,12 +497,14 @@ void gc_start_ext(GarbageCollector* gc,
                   double upsize_load_factor,
                   double sweep_factor)
 {
+    // 合理的取值
     double downsize_limit = downsize_load_factor > 0.0 ? downsize_load_factor : 0.2;
     double upsize_limit = upsize_load_factor > 0.0 ? upsize_load_factor : 0.8;
     sweep_factor = sweep_factor > 0.0 ? sweep_factor : 0.5;
     gc->paused = false;
     gc->bos = bos;
     initial_capacity = initial_capacity < min_capacity ? min_capacity : initial_capacity;
+    // allocs初始化
     gc->allocs = gc_allocation_map_new(min_capacity, initial_capacity,
                                        sweep_factor, downsize_limit, upsize_limit);
     // 打印相关日志
@@ -507,13 +524,17 @@ void gc_resume(GarbageCollector* gc)
 
 void gc_mark_alloc(GarbageCollector* gc, void* ptr)
 {
+    // 获取到是分配的对内存地址
     Allocation* alloc = gc_allocation_map_get(gc->allocs, ptr);
     /* Mark if alloc exists and is not tagged already, otherwise skip */
+    // 如果没有mark
     if (alloc && !(alloc->tag & GC_TAG_MARK)) {
         LOG_DEBUG("Marking allocation (ptr=%p)", ptr);
+        // 标记为mark
         alloc->tag |= GC_TAG_MARK;
         /* Iterate over allocation contents and mark them as well */
         LOG_DEBUG("Checking allocation (ptr=%p, size=%lu) contents", ptr, alloc->size);
+        // 对分配的每一个字节都进行标记
         for (char* p = (char*) alloc->ptr;
                 p <= (char*) alloc->ptr + alloc->size - PTRSIZE;
                 ++p) {
@@ -527,11 +548,14 @@ void gc_mark_alloc(GarbageCollector* gc, void* ptr)
 void gc_mark_stack(GarbageCollector* gc)
 {
     LOG_DEBUG("Marking the stack (gc@%p) in increments of %ld", (void*) gc, sizeof(char));
+    // 获取栈顶，是低地址
     void *tos = __builtin_frame_address(0);
+    // 获取栈底，是是高地址
     void *bos = gc->bos;
     /* The stack grows towards smaller memory addresses, hence we scan tos->bos.
      * Stop scanning once the distance between tos & bos is too small to hold a valid pointer */
     for (char* p = (char*) tos; p <= (char*) bos - PTRSIZE; ++p) {
+        // 标记
         gc_mark_alloc(gc, *(void**)p);
     }
 }
@@ -542,6 +566,7 @@ void gc_mark_roots(GarbageCollector* gc)
     for (size_t i = 0; i < gc->allocs->capacity; ++i) {
         Allocation* chunk = gc->allocs->allocs[i];
         while (chunk) {
+            // 如果是root
             if (chunk->tag & GC_TAG_ROOT) {
                 LOG_DEBUG("Marking root @ %p", chunk->ptr);
                 gc_mark_alloc(gc, chunk->ptr);
@@ -569,31 +594,41 @@ size_t gc_sweep(GarbageCollector* gc)
 {
     LOG_DEBUG("Initiating GC sweep (gc@%p)", (void*) gc);
     size_t total = 0;
+    // 对于每一个分配的对象
     for (size_t i = 0; i < gc->allocs->capacity; ++i) {
+        // 获取一个chunk
         Allocation* chunk = gc->allocs->allocs[i];
         Allocation* next = NULL;
         /* Iterate over separate chaining */
         while (chunk) {
+            // 已经标记占用
             if (chunk->tag & GC_TAG_MARK) {
                 LOG_DEBUG("Found used allocation %p (ptr=%p)", (void*) chunk, (void*) chunk->ptr);
                 /* unmark */
+                /* reset */
                 chunk->tag &= ~GC_TAG_MARK;
+                // 获取下一个chunk
                 chunk = chunk->next;
             } else {
                 LOG_DEBUG("Found unused allocation %p (%lu bytes @ ptr=%p)", (void*) chunk, chunk->size, (void*) chunk->ptr);
                 /* no reference to this chunk, hence delete it */
                 total += chunk->size;
+                // 删除对应的内存
                 if (chunk->dtor) {
                     chunk->dtor(chunk->ptr);
                 }
+                // 删除在map中的指针
                 free(chunk->ptr);
                 /* and remove it from the bookkeeping */
                 next = chunk->next;
+                // 从hashmap中删除
                 gc_allocation_map_remove(gc->allocs, chunk->ptr, false);
+                // 获取下一个
                 chunk = next;
             }
         }
     }
+    // 重新组织hash map
     gc_allocation_map_resize_to_fit(gc->allocs);
     return total;
 }
@@ -625,10 +660,13 @@ size_t gc_stop(GarbageCollector* gc)
     return collected;
 }
 
+// 运行gc
 size_t gc_run(GarbageCollector* gc)
 {
     LOG_DEBUG("Initiating GC run (gc@%p)", (void*) gc);
+    // 先标记
     gc_mark(gc);
+    // 清除垃圾对象
     return gc_sweep(gc);
 }
 

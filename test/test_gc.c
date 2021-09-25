@@ -35,6 +35,7 @@ static char* test_gc_allocation_new_delete()
 {
     // 分配内存
     int* ptr = malloc(sizeof(int));
+    // 获取内存
     Allocation* a = gc_allocation_new(ptr, sizeof(int), dtor);
     mu_assert(a != NULL, "Allocation should return non-NULL");
     mu_assert(a->ptr == ptr, "Allocation should contain original pointer");
@@ -63,6 +64,7 @@ static char* test_gc_allocation_map_new_delete()
     gc_allocation_map_delete(am);
 
     /* Enforce min sizes */
+    // 分配一个map
     am = gc_allocation_map_new(8, 4, 0.5, 0.2, 0.8);
     mu_assert(am->min_capacity == 11, "True min capacity should be next prime");
     mu_assert(am->capacity == 11, "True capacity should be next prime");
@@ -409,6 +411,7 @@ static void _create_allocs(GarbageCollector* gc,
                            size_t size)
 {
     for (size_t i=0; i<count; ++i) {
+        // 分配完了
         gc_malloc(gc, size);
     }
 }
@@ -417,11 +420,14 @@ static char* test_gc_pause_resume()
 {
     GarbageCollector gc_;
     void *bos = __builtin_frame_address(0);
+    // 设置栈底
     gc_start(&gc_, bos);
     /* allocate a bunch of vars in a deeper stack frame */
     size_t N = 32;
+    // 分配内存，分配完了，没有删除
     _create_allocs(&gc_, N, 8);
     /* make sure they are garbage collected after a  pause->resume cycle */
+    //  中断gc
     gc_pause(&gc_);
     mu_assert(gc_.paused, "GC should be paused after pausing");
     gc_resume(&gc_);
@@ -429,13 +435,16 @@ static char* test_gc_pause_resume()
     /* Avoid dumping the registers on the stack to make test less flaky */
     gc_mark_roots(&gc_);
     gc_mark_stack(&gc_);
+    // 收集的的内存
     size_t collected = gc_sweep(&gc_);
 
     mu_assert(collected == N*8, "Unexpected number of collected bytes in pause/resume");
+    // 停止gc
     gc_stop(&gc_);
     return NULL;
 }
 
+// 分配一个内存
 static char* duplicate_string(GarbageCollector* gc, char* str)
 {
     char* copy = (char*) gc_strdup(gc, str);

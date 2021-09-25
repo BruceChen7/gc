@@ -12,12 +12,15 @@
 struct AllocationMap;
 
 typedef struct GarbageCollector {
+    // 所有分配的内存
     struct AllocationMap* allocs; // allocation map
     bool paused;                  // (temporarily) switch gc on/off
+    // bottom of stack
     void *bos;                    // bottom of stack
     size_t min_size;
 } GarbageCollector;
 
+// 全局的单例
 extern GarbageCollector gc;  // Global garbage collector for all
                              // single-threaded applications
 
